@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server';
-import Ably from 'ably'; // ✅ modern import
+import Ably from 'ably';
 
-const ably = new Ably.Rest(process.env.ABLY_API_KEY!);
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const clientId = 'anon-' + Math.random().toString(36).slice(2, 9);
+    const apiKey = process.env.ABLY_API_KEY;
+    if (!apiKey) {
+      console.error('Ably auth error: missing ABLY_API_KEY');
+      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+    }
+
+    const url = new URL(request.url);
+    const providedClientId = url.searchParams.get('clientId') || undefined;
+    const clientId = providedClientId || 'anon-' + Math.random().toString(36).slice(2, 9);
+
+    const ably = new Ably.Rest(apiKey);
     const tokenRequest = await ably.auth.createTokenRequest({ clientId });
     return NextResponse.json(tokenRequest);
   } catch (err: any) {

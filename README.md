@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Chat Setup
+
+This app includes a simple real-time chat powered by Ably. To run it locally:
+
+- Create a `.env.local` file (do not commit this file) and set:
+  - `ABLY_API_KEY=your-ably-api-key` (server-side, used by the auth route)
+  - `NEXT_PUBLIC_ABLY_AUTH_URL=/api/ably-auth` (client-side auth URL; default works)
+- Get an Ably API key from your Ably dashboard.
+- Start the dev server: `npm run dev`
+- Open `/chat` to use the chat UI.
+
+Security note: keep your Ably API key private and out of version control. If a key was accidentally committed at any point, rotate it in the Ably dashboard.
