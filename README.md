@@ -1,49 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Overview
 
-## Getting Started
+Amana Chat is a real-time messaging experience built with Next.js 15, React 19, and Ably. The application provides authenticated access to a shared chat room, presence indicators for connected users, and a responsive UI designed for both desktop and mobile screens.
 
-First, run the development server:
+## Key Features
+
+- Secure email/password authentication with hashed credentials and JWT-backed sessions.
+- Ably-powered realtime messaging, presence tracking, and typing indicators.
+- Accessible, mobile-friendly interface with live connection status and logout controls.
+- Simple JSON-backed user store for local development and rapid prototyping.
+
+## Prerequisites
+
+- Node.js 20 or later
+- npm (comes with Node)
+- Ably account and API key
+
+## Environment Configuration
+
+Use `.env.example` as a reference and create a `.env.local` file with the following variables:
+
+```
+ABLY_API_KEY=your-ably-api-key
+NEXT_PUBLIC_ABLY_AUTH_URL=/api/ably-auth
+AUTH_SECRET=replace-with-32-char-secret
+```
+
+Recommendations:
+
+- Keep `.env.local` out of version control.
+- Use a long, random string for `AUTH_SECRET`, and rotate it regularly in production.
+- Optionally set `AUTH_USERS_PATH` to override the default `data/users.json` storage location.
+
+## Installation
+
+```bash
+npm install
+```
+
+## Local Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at [http://localhost:3000](http://localhost:3000). Register a new account or sign in with existing credentials to join the chat.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure Highlights
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/` – Next.js App Router pages and API routes (auth, Ably token exchange).
+- `components/` – Client components for chat UI, message input, user list, and auth form.
+- `lib/auth/` – Session helpers, validation schema, and file-backed user repository.
+- `lib/ablyClient.ts` – Lazy Ably client initializer that respects the active session.
+- `data/users.json` – Default credential store (JSON). Safe for development only.
 
-## Learn More
+## Security Notes
 
-To learn more about Next.js, take a look at the following resources:
+- Never commit secrets or API keys. Rotate compromised keys immediately.
+- The JSON user store is intended for local usage; replace it with a persistent database before deploying to production.
+- JWT cookies are httpOnly and set to expire after seven days—adjust the duration to match your security requirements.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Chat Setup
-
-This app includes a simple real-time chat powered by Ably. To run it locally:
-
-- Create a `.env.local` file (do not commit this file) and set:
-  - `ABLY_API_KEY=your-ably-api-key` (server-side, used by the auth route)
-  - `NEXT_PUBLIC_ABLY_AUTH_URL=/api/ably-auth` (client-side auth URL; default works)
-- Get an Ably API key from your Ably dashboard.
-- Start the dev server: `npm run dev`
-- Open `/chat` to use the chat UI.
-
-Security note: keep your Ably API key private and out of version control. If a key was accidentally committed at any point, rotate it in the Ably dashboard.
+This project targets the standard Next.js deployment workflow (Vercel, Docker, or custom Node hosting). Ensure environment variables are configured for the target platform and consider upgrading the credential store before going live.

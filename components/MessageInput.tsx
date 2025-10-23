@@ -55,10 +55,13 @@ export default function MessageInput({
           }`}
         >
           <span>Send</span>
-          <span aria-hidden>➤</span>
+          <span aria-hidden="true">&rarr;</span>
+          <span className="sr-only">Send message</span>
         </button>
       </div>
       <div className="text-xs text-gray-400 select-none">{remaining} characters left</div>
     </form>
   );
 }
+
+

@@ -1,48 +1,38 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type * as Ably from 'ably';
 import { getAblyClient } from '../lib/ablyClient';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import OnlineUsers from './OnlineUsers';
-import { ChatMessage } from '../lib/types';
+import { ChatMessage, SessionUser } from '../lib/types';
 import { shortId } from '../lib/uuid';
 
 const CHANNEL_NAME = 'global-chat';
 
-export default function ChatRoom() {
+type ChatRoomProps = {
+  user: SessionUser;
+};
+
+export default function ChatRoom({ user }: ChatRoomProps) {
+  const router = useRouter();
+  const userId = user.id;
+  const username = user.name;
+
   // --- Basic state
   const [mounted, setMounted] = useState(false);
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<{ clientId: string; data?: any }[]>([]);
   const [showUsers, setShowUsers] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const typingSentRef = useRef(false);
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
   const channelRef = useRef<Ably.RealtimeChannel | null>(null);
 
-  // --- Persistent identity
-  const [userId, setUserId] = useState('');
-  const [username, setUsername] = useState('');
-
   useEffect(() => {
-    // create / restore identity
-    const savedUserId = localStorage.getItem('userId');
-    const savedUsername = localStorage.getItem('username');
-
-    if (savedUserId && savedUsername) {
-      setUserId(savedUserId);
-      setUsername(savedUsername);
-    } else {
-      const newId = shortId('u-');
-      const newName = 'User-' + newId.slice(-4);
-      setUserId(newId);
-      setUsername(newName);
-      localStorage.setItem('userId', newId);
-      localStorage.setItem('username', newName);
-    }
-
     setMounted(true);
   }, []);
 
@@ -81,7 +71,12 @@ export default function ChatRoom() {
 
     channel.presence.subscribe(updatePresence);
     updatePresence();
-    channel.presence.enter({ username });
+
+    channel.presence
+      .enter({ username, email: user.email, typing: false })
+      .catch((error: unknown) => {
+        console.error('presence.enter error', error);
+      });
 
     // load previous messages
     (async () => {
@@ -124,11 +119,15 @@ export default function ChatRoom() {
       try { ably.connection.off(onConn); } catch {}
       channel.presence.unsubscribe(updatePresence);
       channel.unsubscribe('chat-message', onMessage);
-      try {
-        channel.presence.leave();
-      } catch {}
+      channel.presence
+        .leave()
+        .catch((error: unknown) => {
+          if ((error as any)?.message !== 'Connection closed') {
+            console.warn('presence.leave error', error);
+          }
+        });
     };
-  }, [mounted, userId, username]);
+  }, [mounted, userId, username, user.email]);
 
   // --- Message sender
   const handleSendMessage = (text: string) => {
@@ -137,7 +136,7 @@ export default function ChatRoom() {
     // stop typing once message is sent
     try {
       if (typingSentRef.current) {
-        channelRef.current.presence.update({ username, typing: false });
+        channelRef.current.presence.update({ username, email: user.email, typing: false });
         typingSentRef.current = false;
       }
     } catch {}
@@ -147,9 +146,32 @@ export default function ChatRoom() {
     if (!channelRef.current) return;
     if (typingSentRef.current === typing) return;
     try {
-      channelRef.current.presence.update({ username, typing });
+      channelRef.current.presence.update({ username, email: user.email, typing });
       typingSentRef.current = typing;
     } catch {}
+  };
+
+  const handleLogout = async () => {
+    setLogoutLoading(true);
+    try {
+      if (ablyRef.current) {
+        try {
+          ablyRef.current.close();
+        } catch (error) {
+          console.error('ably close error', error);
+        }
+        ablyRef.current = null;
+        channelRef.current = null;
+      }
+
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('logout error', error);
+    } finally {
+      setLogoutLoading(false);
+    }
   };
 
   // --- Render
@@ -181,18 +203,36 @@ export default function ChatRoom() {
       {/* Chat area */}
       <main className="flex-1 flex flex-col bg-white/60 backdrop-blur-sm">
         {/* Header */}
-        <header className="flex items-center justify-between px-4 py-3 border-b bg-white/70 backdrop-blur-md">
-          <button
-            className="sm:hidden px-3 py-1.5 border hover:bg-gray-50"
-            onClick={() => setShowUsers(s => !s)}
-            aria-label="Toggle users sidebar"
-          >
-            Users ({users.length})
-          </button>
-          <div className="text-sm font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-violet-600">Global Chat</div>
-          <div className={`flex items-center gap-2 text-sm ${connected ? 'text-green-600' : 'text-red-500'}`}>
-            <span className={`inline-block w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-600' : 'bg-red-500'}`} />
-            {connected ? 'Connected' : 'Disconnected'}
+        <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-white/70 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <button
+              className="sm:hidden px-3 py-1.5 border hover:bg-gray-50"
+              onClick={() => setShowUsers(s => !s)}
+              aria-label="Toggle users sidebar"
+            >
+              Users ({users.length})
+            </button>
+            <div className="text-sm font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-violet-600">
+              Global Chat
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm">
+            <div className="hidden sm:flex items-center gap-2 text-gray-600">
+              <span className="text-xs uppercase tracking-wide text-gray-400">Signed in</span>
+              <span className="font-medium">{username}</span>
+            </div>
+            <button
+              className="px-3 py-1.5 border rounded-md hover:bg-gray-50 disabled:opacity-60"
+              onClick={handleLogout}
+              disabled={logoutLoading}
+            >
+              {logoutLoading ? 'Signing out...' : 'Logout'}
+            </button>
+            <div className={`flex items-center gap-2 ${connected ? 'text-green-600' : 'text-red-500'}`}>
+              <span className={`inline-block w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-600' : 'bg-red-500'}`} />
+              {connected ? 'Connected' : 'Disconnected'}
+            </div>
           </div>
         </header>
 
@@ -209,9 +249,9 @@ export default function ChatRoom() {
                 const typing = users
                   .filter(u => u.clientId !== userId && u.data?.typing)
                   .map(u => u.data?.username || u.clientId);
-                if (typing.length === 1) return `${typing[0]} is typing…`;
-                if (typing.length === 2) return `${typing[0]} and ${typing[1]} are typing…`;
-                return `${typing[0]}, ${typing[1]} and others are typing…`;
+                if (typing.length === 1) return `${typing[0]} is typing...`;
+                if (typing.length === 2) return `${typing[0]} and ${typing[1]} are typing...`;
+                return `${typing[0]}, ${typing[1]} and others are typing...`;
               })()}
             </div>
           )}
@@ -221,3 +261,7 @@ export default function ChatRoom() {
     </div>
   );
 }
+
+
+
+
