@@ -1,64 +1,59 @@
-import { promises as fs } from 'fs';
-import path from 'path';
-import { randomUUID } from 'crypto';
+import { ObjectId } from 'mongodb';
 import type { SessionUser, UserRecord } from '../types';
+import { getDb } from '../db/mongo';
 
-const USERS_FILE = process.env.AUTH_USERS_PATH
-  ? path.resolve(process.env.AUTH_USERS_PATH)
-  : path.join(process.cwd(), 'data', 'users.json');
-const DATA_DIR = path.dirname(USERS_FILE);
+const USERS_COLLECTION = 'users';
 
-async function ensureDataFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(USERS_FILE);
-  } catch {
-    await fs.writeFile(USERS_FILE, '[]', 'utf8');
+type UserDoc = Omit<UserRecord, 'id'> & { _id: ObjectId };
+
+let indexesEnsured = false;
+
+async function getUsersCollection() {
+  const db = await getDb();
+  const collection = db.collection<UserDoc>(USERS_COLLECTION);
+
+  if (!indexesEnsured) {
+    await collection.createIndex({ email: 1 }, { unique: true });
+    indexesEnsured = true;
   }
+
+  return collection;
 }
 
-void (async () => {
-  try {
-    await ensureDataFile();
-  } catch (error) {
-    console.error('Failed to prepare user store data directory', error);
-  }
-})();
-
-async function readUsers(): Promise<UserRecord[]> {
-  await ensureDataFile();
-  const raw = await fs.readFile(USERS_FILE, 'utf8');
-  try {
-    const parsed = JSON.parse(raw) as UserRecord[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((user) => ({
-      ...user,
-      email: user.email.toLowerCase(),
-    }));
-  } catch {
-    return [];
-  }
+function toUserRecord(doc: UserDoc): UserRecord {
+  return {
+    id: doc._id.toHexString(),
+    email: doc.email,
+    name: doc.name,
+    passwordHash: doc.passwordHash,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
 }
 
-async function writeUsers(users: UserRecord[]) {
-  await ensureDataFile();
-  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+function toSessionUser(doc: UserDoc): SessionUser {
+  const { passwordHash, ...rest } = toUserRecord(doc);
+  return rest;
 }
 
 export async function getUserByEmail(email: string): Promise<UserRecord | undefined> {
-  const normalized = email.trim().toLowerCase();
-  const users = await readUsers();
-  return users.find((user) => user.email === normalized);
+  const collection = await getUsersCollection();
+  const doc = await collection.findOne({ email: email.trim().toLowerCase() });
+  return doc ? toUserRecord(doc) : undefined;
 }
 
 export async function getUserById(id: string): Promise<UserRecord | undefined> {
-  const users = await readUsers();
-  return users.find((user) => user.id === id);
+  const collection = await getUsersCollection();
+  if (!ObjectId.isValid(id)) return undefined;
+  const objectId = new ObjectId(id);
+  const doc = await collection.findOne({ _id: objectId });
+  return doc ? toUserRecord(doc) : undefined;
 }
 
 export async function listUsers(): Promise<SessionUser[]> {
-  const users = await readUsers();
-  return users.map(({ passwordHash, ...rest }) => rest);
+  const collection = await getUsersCollection();
+  const docs = await collection.find().sort({ createdAt: 1 }).toArray();
+  return docs.map(toSessionUser);
 }
 
 export async function createUser(params: {
@@ -66,34 +61,24 @@ export async function createUser(params: {
   name: string;
   passwordHash: string;
 }): Promise<UserRecord> {
-  const email = params.email.trim().toLowerCase();
-  const users = await readUsers();
+  const collection = await getUsersCollection();
   const now = new Date().toISOString();
-
-  const newUser: UserRecord = {
-    id: randomUUID(),
-    email,
+  const doc: UserDoc = {
+    _id: new ObjectId(),
+    email: params.email.trim().toLowerCase(),
     name: params.name.trim(),
     passwordHash: params.passwordHash,
     createdAt: now,
     updatedAt: now,
   };
 
-  users.push(newUser);
-  await writeUsers(users);
-
-  return newUser;
+  await collection.insertOne(doc);
+  return toUserRecord(doc);
 }
 
 export async function updateUserTimestamp(id: string) {
-  const users = await readUsers();
-  const idx = users.findIndex((user) => user.id === id);
-  if (idx === -1) return;
-
-  users[idx] = {
-    ...users[idx],
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeUsers(users);
+  const collection = await getUsersCollection();
+  if (!ObjectId.isValid(id)) return;
+  const objectId = new ObjectId(id);
+  await collection.updateOne({ _id: objectId }, { $set: { updatedAt: new Date().toISOString() } });
 }

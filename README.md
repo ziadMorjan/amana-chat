@@ -5,9 +5,9 @@ Amana Chat is a real-time messaging experience built with Next.js 15, React 19, 
 ## Key Features
 
 - Secure email/password authentication with hashed credentials and JWT-backed sessions.
+- MongoDB persistence for user accounts and chat history.
 - Ably-powered realtime messaging, presence tracking, and typing indicators.
 - Accessible, mobile-friendly interface with live connection status and logout controls.
-- Simple JSON-backed user store for local development and rapid prototyping.
 
 ## Prerequisites
 
@@ -23,13 +23,15 @@ Use `.env.example` as a reference and create a `.env.local` file with the follow
 ABLY_API_KEY=your-ably-api-key
 NEXT_PUBLIC_ABLY_AUTH_URL=/api/ably-auth
 AUTH_SECRET=replace-with-32-char-secret
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=amana_chat
 ```
 
 Recommendations:
 
 - Keep `.env.local` out of version control.
 - Use a long, random string for `AUTH_SECRET`, and rotate it regularly in production.
-- Optionally set `AUTH_USERS_PATH` to override the default `data/users.json` storage location.
+- Point `MONGODB_URI`/`MONGODB_DB` at a development cluster (Atlas or local) and configure production secrets in your deployment environment.
 
 ## Installation
 
@@ -47,16 +49,17 @@ The app runs at [http://localhost:3000](http://localhost:3000). Register a new a
 
 ## Project Structure Highlights
 
-- `app/` – Next.js App Router pages and API routes (auth, Ably token exchange).
+- `app/` – Next.js App Router pages and API routes (auth, Ably token exchange, chat messages).
 - `components/` – Client components for chat UI, message input, user list, and auth form.
-- `lib/auth/` – Session helpers, validation schema, and file-backed user repository.
+- `lib/auth/` – Session helpers, validation schema, and Mongo-backed user repository.
+- `lib/messages/` – MongoDB persistence helpers for chat history.
+- `lib/db/mongo.ts` – Shared MongoDB client with connection caching.
 - `lib/ablyClient.ts` – Lazy Ably client initializer that respects the active session.
-- `data/users.json` – Default credential store (JSON). Safe for development only.
 
 ## Security Notes
 
 - Never commit secrets or API keys. Rotate compromised keys immediately.
-- The JSON user store is intended for local usage; replace it with a persistent database before deploying to production.
+- Ensure MongoDB credentials and network access rules are scoped to the minimum necessary privileges.
 - JWT cookies are httpOnly and set to expire after seven days—adjust the duration to match your security requirements.
 
 ## Deployment

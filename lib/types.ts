@@ -1,11 +1,3 @@
-export type ChatMessage = {
-  id: string;
-  userId: string;
-  username: string;
-  text: string;
-  timestamp: number;
-};
-
 export type UserRecord = {
   id: string;
   email: string;
@@ -16,3 +8,19 @@ export type UserRecord = {
 };
 
 export type SessionUser = Omit<UserRecord, 'passwordHash'>;
+
+export type StoredMessage = {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  createdAt: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  timestamp: number;
+};

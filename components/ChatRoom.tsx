@@ -36,6 +36,42 @@ export default function ChatRoom({ user }: ChatRoomProps) {
     setMounted(true);
   }, []);
 
+  // --- Load persisted messages
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+
+    async function loadMessages() {
+      try {
+        const response = await fetch('/api/messages?limit=100', {
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load messages (${response.status})`);
+        }
+        const data = await response.json();
+        if (!cancelled && Array.isArray(data.messages)) {
+          setMessages(
+            data.messages.map((msg: any) => ({
+              id: msg.id,
+              userId: msg.userId,
+              username: msg.username,
+              text: msg.text,
+              timestamp: new Date(msg.createdAt).getTime(),
+            }))
+          );
+        }
+      } catch (error) {
+        console.error('message fetch error', error);
+      }
+    }
+
+    loadMessages();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted]);
+
   // --- Main Ably logic
   useEffect(() => {
     if (!mounted || !userId || !username) return;
@@ -78,32 +114,13 @@ export default function ChatRoom({ user }: ChatRoomProps) {
         console.error('presence.enter error', error);
       });
 
-    // load previous messages
-    (async () => {
-      try {
-        const page = await channel.history({ limit: 50 });
-        if (page?.items) {
-          const hist = page.items.map((itm: any) => ({
-            id: itm.id || shortId('m-'),
-            userId: itm.data?.userId || 'unknown',
-            username: itm.data?.username || 'unknown',
-            text: itm.data?.text || '',
-            timestamp: new Date(itm.timestamp || Date.now()).getTime(),
-          }));
-          setMessages(hist.reverse());
-        }
-      } catch (err) {
-        console.error('history error', err);
-      }
-    })();
-
     // Subscribe to new messages live
     const onMessage = (msg: any) => {
       if (msg.name !== 'chat-message') return;
       setMessages((prev) => [
         ...prev,
         {
-          id: msg.id || shortId('m-'),
+          id: msg.data?.messageId || msg.id || shortId('m-'),
           userId: msg.data?.userId,
           username: msg.data?.username,
           text: msg.data?.text,
@@ -131,15 +148,57 @@ export default function ChatRoom({ user }: ChatRoomProps) {
 
   // --- Message sender
   const handleSendMessage = (text: string) => {
-    if (!channelRef.current || !text.trim()) return;
-    channelRef.current.publish('chat-message', { userId, username, text });
-    // stop typing once message is sent
-    try {
-      if (typingSentRef.current) {
-        channelRef.current.presence.update({ username, email: user.email, typing: false });
-        typingSentRef.current = false;
+    const channel = channelRef.current;
+    const value = text.trim();
+    if (!channel || !value) return;
+
+    const persistAndPublish = async () => {
+      try {
+        const response = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: value }),
+        });
+
+        if (response.status === 401) {
+          router.replace('/login');
+          router.refresh();
+          return;
+        }
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data?.error || `Message save failed (${response.status})`);
+        }
+
+        const data = await response.json();
+        const messageId = data?.message?.id || shortId('m-');
+
+        await channel.publish('chat-message', {
+          messageId,
+          userId,
+          username,
+          text: value,
+        });
+      } catch (error) {
+        console.error('send message error', error);
+      } finally {
+        try {
+          if (typingSentRef.current) {
+            channel.presence.update({ username, email: user.email, typing: false });
+          }
+        } catch (error) {
+          console.error('typing status reset error', error);
+        } finally {
+          typingSentRef.current = false;
+        }
       }
-    } catch {}
+    };
+
+    void persistAndPublish();
+
+    // stop typing once message is sent
+    // presence update handled in finally block
   };
 
   const handleTyping = (typing: boolean) => {

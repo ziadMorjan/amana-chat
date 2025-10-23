@@ -41,7 +41,13 @@ export async function POST(request: Request) {
     applySessionCookie(response, token);
 
     return response;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        { error: 'Email already registered' },
+        { status: 409 }
+      );
+    }
     console.error('Register error', error);
     return NextResponse.json(
       { error: 'Failed to register user' },
